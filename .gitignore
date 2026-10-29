@@ -1,0 +1,106 @@
+# =============================================================================
+# MioKit.LockBreaker — .gitignore
+# =============================================================================
+
+# --- .NET build outputs ---
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+
+# --- NuGet ---
+packages/
+*.nupkg
+*.snupkg
+nupkgs/
+project.lock.json
+project.fragment.lock.json
+
+# --- User-specific / IDE ---
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.DotSettings.user
+.vs/
+.idea/
+.claude/
+.codegraph/
+.fleet/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+riderModule.iml
+/_ReSharper.Caches/
+
+# --- Test results ---
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+.pnpm-store/
+.pnp
+.pnp.js
+.turbo/
+.cache/
+.vite/
+*.tsbuildinfo
+.eslintcache
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+secrets.json
+credentials.json
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- Publish / temp ---
+[Pp]ublish/
+publish/
+tmp/
+temp/
+*.tmp
+*.swp
+*~
+preprocessed.xml
+
+# --- Agent tooling ---
+.agents/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*

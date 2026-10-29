@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="plugin/MioKit.LockBreaker.csproj" />
+  <Project Path="preview/MioKit.LockBreaker.Preview.csproj" />
+</Solution>

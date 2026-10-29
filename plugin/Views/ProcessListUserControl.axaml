@@ -1,0 +1,178 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:MioKit.LockBreaker.Models"
+             xmlns:views="clr-namespace:MioKit.LockBreaker.Views"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="360"
+             x:Class="MioKit.LockBreaker.Views.ProcessListUserControl"
+             x:DataType="views:LockQueryWindowModelBase">
+    <UserControl.Styles>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBoxItem:focus">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:focus">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:focus /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover Border.ProcessCard">
+            <Setter Property="Background" Value="{DynamicResource ShadMutedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ShadBorderBrush}" />
+        </Style>
+        <Style Selector="ListBoxItem:selected Border.ProcessCard">
+            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover Border.ProcessCard">
+            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:focus Border.ProcessCard">
+            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border CornerRadius="{DynamicResource ShadCornerRadius}"
+            Background="{DynamicResource ShadCardBrush}"
+            BorderBrush="{DynamicResource ShadBorderBrush}"
+            BorderThickness="1"
+            BoxShadow="{DynamicResource ShadShadowSm}"
+            ClipToBounds="True">
+        <Grid>
+            <ListBox ItemsSource="{Binding Items}"
+                     SelectedItem="{Binding SelectedItem}"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Padding="12"
+                     IsVisible="{Binding HasItems}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:LockOwnerItem">
+                        <Border Classes="ProcessCard"
+                                Padding="14,12"
+                                CornerRadius="{DynamicResource ShadCornerRadius}"
+                                Background="{DynamicResource ShadMutedBrush-50}"
+                                BorderBrush="{DynamicResource ShadBorderBrush}"
+                                BorderThickness="1">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <TextBlock Grid.Column="0"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource ShadCardForegroundBrush}"
+                                               Text="{Binding ProcessName}" />
+                                    <Border Grid.Column="1"
+                                            Padding="8,2"
+                                            CornerRadius="{DynamicResource ShadCornerRadiusSmall}"
+                                            Background="{DynamicResource ShadMutedBrush}"
+                                            BorderBrush="{DynamicResource ShadBorderBrush}"
+                                            BorderThickness="1"
+                                            VerticalAlignment="Center">
+                                        <TextBlock FontSize="11"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource ShadMutedForegroundBrush}"
+                                                   Text="{Binding ProcessId, StringFormat=PID {0}}" />
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock Grid.Row="1"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasDetail}"
+                                           Foreground="{DynamicResource ShadMutedForegroundBrush}"
+                                           Text="{Binding Detail}" />
+
+                                <TextBlock Grid.Row="2"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasPortMeta}"
+                                           Foreground="{DynamicResource ShadMutedForegroundBrush}"
+                                           Text="{Binding PortMetaText}" />
+
+                                <TextBlock Grid.Row="3"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Opacity="0.9"
+                                           IsVisible="{Binding HasExecutablePath}"
+                                           Foreground="{DynamicResource ShadLowTextBrush}"
+                                           Text="{Binding ExecutablePath}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="6"
+                        Margin="24"
+                        IsVisible="{Binding !HasItems}">
+                <TextBlock Text="暂无占用进程"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource ShadMutedForegroundBrush}" />
+                <TextBlock Text="查询后将在此列出占用目标的进程"
+                           FontSize="12"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource ShadLowTextBrush}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

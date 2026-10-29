@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>true</IsPackable>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <!-- 插件程序集必须位于 nupkg 根目录，不是供消费项目引用的 lib 资产。 -->
+        <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+        <PackageId>$(MSBuildProjectName)</PackageId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MioKit.Extensions" Version="1.0.8"/>
+        <PackageReference Include="MioKit.SourceGenerate" Version="1.0.8">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="$(TargetPath)" Pack="true" PackagePath=""/>
+        <None Include="plugin.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Pack>true</Pack>
+            <PackagePath></PackagePath>
+        </None>
+        <None Include="Assets\icon.png">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Pack>true</Pack>
+            <PackagePath>Assets</PackagePath>
+        </None>
+    </ItemGroup>
+
+    <Target Name="GenerateMioKitPluginManifest" BeforeTargets="GenerateNuspec">
+        <Error Condition="!Exists('plugin.json')" Text="MioKit 插件包必须在项目根目录提供 plugin.json。" />
+        <Exec Command="powershell -NoProfile -NonInteractive -Command &quot;&amp; { $json = Get-Content -Raw -Encoding UTF8 'plugin.json' | ConvertFrom-Json; if ($json.metadataVersion -ne '1.0' -or [string]::IsNullOrWhiteSpace($json.id) -or [string]::IsNullOrWhiteSpace($json.name) -or [string]::IsNullOrWhiteSpace($json.assembly) -or [string]::IsNullOrWhiteSpace($json.minSdkVersion)) { throw 'plugin.json 必须使用 metadataVersion 1.0，并包含非空的 id、name、assembly 和 minSdkVersion。' }; foreach ($field in @('pluginVersion','releaseState','releaseDate')) { if ($json.PSObject.Properties.Name -contains $field) { throw ('plugin.json 禁止发布字段: ' + $field) } } }&quot;" />
+        <Exec Command="powershell -NoProfile -NonInteractive -Command &quot;&amp; { $plugin = Get-Content -Raw -Encoding UTF8 'plugin.json' | ConvertFrom-Json; $envelope = [ordered]@{ schema = 'miokit.plugin-package'; schemaVersion = 1; plugin = $plugin }; $directory = '$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)'; New-Item -ItemType Directory -Force $directory | Out-Null; $envelope | ConvertTo-Json -Depth 100 -Compress | Set-Content -NoNewline -Encoding utf8 (Join-Path $directory 'miokit-package-description.json') }&quot;" />
+        <Exec Command="powershell -NoProfile -NonInteractive -Command &quot;&amp; { $plugin = Get-Content -Raw -Encoding UTF8 'plugin.json' | ConvertFrom-Json; $icon = [string]$plugin.icon; $path = '$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)miokit-package-icon.txt'; if ([string]::IsNullOrWhiteSpace($icon)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } } else { $icon.Replace('\','/') | Set-Content -NoNewline -Encoding utf8 $path } }&quot;" />
+        <ReadLinesFromFile File="$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)miokit-package-icon.txt" Condition="Exists('$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)miokit-package-icon.txt')">
+            <Output TaskParameter="Lines" ItemName="_MioKitPackageIconLines" />
+        </ReadLinesFromFile>
+        <PropertyGroup>
+            <PackageDescription>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)miokit-package-description.json'))</PackageDescription>
+            <PackageIcon>@(_MioKitPackageIconLines)</PackageIcon>
+        </PropertyGroup>
+    </Target>
+</Project>

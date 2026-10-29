@@ -1,0 +1,52 @@
+name: Release nupkg
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  pack-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notlike 'v*') {
+            throw "Tag must start with 'v', got: $tag"
+          }
+          $version = $tag.Substring(1)
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Tag has empty version after 'v': $tag"
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            throw "Tag version must be valid NuGet SemVer after removing 'v', got: $version"
+          }
+          $prerelease = $version.Contains('-').ToString().ToLowerInvariant()
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "PackageVersion=$version prerelease=$prerelease"
+
+      - name: Pack plugin
+        shell: pwsh
+        run: .\pack.ps1 -PackageVersion ${{ steps.version.outputs.version }} -PackageId MioKit.LockBreaker
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.nupkg
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}

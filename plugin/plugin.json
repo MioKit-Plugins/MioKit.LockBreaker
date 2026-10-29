@@ -1,0 +1,15 @@
+{
+  "metadataVersion": "1.0",
+  "id": "miokit.lock-finder",
+  "name": "LockBreaker",
+  "description": "# LockBreaker（占用查找与解除）\n\n在 MioKit 搜索框内快速查找并解除文件、文件夹或端口的占用进程。\n\n## 功能\n\n- **文件占用**：输入路径或选择文件/文件夹，列出占用进程，可结束选中或全部进程\n- **端口占用**：按端口号查询 TCP/UDP（IPv4/IPv6）监听与连接进程，同样支持结束占用\n- **剪贴板直达**：复制文件/文件夹路径后打开搜索框，直接生成「查看文件占用」结果\n- **命令附着**：输入 `port-lock` 后按宿主配置的 command 触发键附着，再输入端口号即可查询\n- **安全结束**：内置系统关键进程保护名单，拒绝误杀\n- **搜索集成**：打开查询窗口的节点支持别名、热键、置顶与最近使用\n\n## 使用\n\n- 搜索「打开文件占用」或「打开端口占用」打开查询窗口\n- 文件占用窗口支持手动输入路径或通过文件/文件夹选择器指定目标\n- 端口占用窗口输入 1–65535 的端口号即可查询",
+  "category": "Tools",
+  "author": "tinyisle",
+  "website": "https://www.tinyisle.cn/plugins/lock-finder",
+  "icon": "Assets/icon.png",
+  "assembly": "MioKit.LockBreaker.dll",
+  "minSdkVersion": "1.0.0",
+  "minHostVersion": "1.0.0",
+  "dependencies": [],
+  "nugetDependents": []
+}
