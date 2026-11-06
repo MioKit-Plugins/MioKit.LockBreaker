@@ -6,7 +6,7 @@ namespace MioKit.LockBreaker.Nodes;
 /// command「port」附着后，解析端口号，结果交给开窗节点执行。
 /// </summary>
 [EavType(FileLockFinderConst.PortLockSearchScopeTypeId)]
-public class PortLockSearchScope : MioObject, ISearchScopeFeature
+public class PortLockSearchScope : MioObject, ISearchScopeFeature, IInvocationPresentationFeature
 {
     public PortLockSearchScope(string id) : base(id)
     {
@@ -16,14 +16,23 @@ public class PortLockSearchScope : MioObject, ISearchScopeFeature
 
     public override Guid MioType => FileLockFinderConst.PortLockSearchScopeType;
 
+    public InvocationPresentation GetPresentation(InvocationPresentationRequest request) => new()
+    {
+        Interaction = InvocationInteraction.Continue
+    };
+
     public IReadOnlyList<string> SearchCommands { get; } = ["port-lock"];
 
     public Task OnAttachSearchBox(ISearchBoxWindow searchBoxWindow) => Task.CompletedTask;
 
     public Task OnDetachSearchBox(ISearchBoxWindow searchBoxWindow) => Task.CompletedTask;
 
-    public Task InvokeAsync(InvokeContext context) =>
-        MioIoc.Resolve<ISearchBoxWindow>().SetAttachedPanelAsync(this);
+    public Task InvokeAsync(InvokeContext context)
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+        return FileLockFinderRegister.Instance.ComponentContext.Resolve<ISearchBoxWindow>()
+            .SetAttachedPanelAsync(this);
+    }
 
     public ValueTask SearchAsync(
         SearchRequest request,

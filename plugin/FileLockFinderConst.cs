@@ -19,6 +19,10 @@ public static class FileLockFinderConst
     public const string OpenFileLockWindowNodeTypeId = "C2D5E6F7-8091-4B02-A3B4-E5F60718293A";
     public static readonly Guid OpenFileLockWindowNodeType = Guid.Parse(OpenFileLockWindowNodeTypeId);
 
+    public const string CheckExplorerSelectionNodeId = "lock-finder.check-explorer-selection";
+    public const string CheckExplorerSelectionNodeTypeId = "493A5A9B-7550-487B-96C8-E7F40679DC6F";
+    public static readonly Guid CheckExplorerSelectionNodeType = Guid.Parse(CheckExplorerSelectionNodeTypeId);
+
     public const string OpenPortLockWindowNodeId = "lock-finder.open-port-lock";
     public const string OpenPortLockWindowNodeTypeId = "D3E6F708-91A2-4C13-B4C5-F60718293A4B";
     public static readonly Guid OpenPortLockWindowNodeType = Guid.Parse(OpenPortLockWindowNodeTypeId);

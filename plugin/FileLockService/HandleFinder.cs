@@ -1,22 +1,24 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
+using MioKit.LockBreaker.Models;
 using static MioKit.LockBreaker.NativeMethods;
 
 namespace MioKit.LockBreaker;
 
-/// <summary>
-/// Uses low-level NT API (NtQuerySystemInformation) to enumerate all system handles
-/// and find which processes hold handles to a given path. This catches cases the
-/// Restart Manager might miss (e.g. directory handles, memory-mapped files).
-/// </summary>
+/// <summary>One system handle snapshot, matched against every target in the batch.</summary>
 internal static class HandleFinder
 {
-    // Use SystemExtendedHandleInformation (64) — has full ULONG ProcessId
     private const int SystemExtendedHandleInformation = 64;
+    private const uint ShareAll = 0x7;
+    private const uint OpenExisting = 3;
+    private const uint BackupSemantics = 0x02000000;
+    internal const uint ScanProcessAccess = PROCESS_DUP_HANDLE;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
+    // A stuck native name query retains its own handle, without creating unbounded threads.
+    private static readonly SemaphoreSlim NameQuerySlots = new(8, 8);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX
+    private struct HandleEntry
     {
         public IntPtr Object;
         public IntPtr UniqueProcessId;
@@ -28,377 +30,275 @@ internal static class HandleFinder
         public uint Reserved;
     }
 
-    /// <summary>
-    /// Find processes holding handles to files under the given path (file or directory).
-    /// Uses object-type filtering and parallel scanning for speed.
-    /// </summary>
-    public static List<LockingProcess> FindLockingProcesses(string targetPath, bool debug = false)
+    public static HandleScanResult FindLockingProcesses(IReadOnlyList<FileLockTarget> targets,
+        CancellationToken cancellationToken)
     {
-        var results = new ConcurrentDictionary<int, LockingProcess>(); // dedupe by PID
-        targetPath = Path.GetFullPath(targetPath);
-
-        // Convert to NT path format for comparison
-        // For OneDrive and other reparse-point paths, also try the raw path
-        var ntPaths = GetNtPaths(targetPath);
-        bool isDirectory = Directory.Exists(targetPath);
-
-        if (debug)
+        var diagnostics = new ConcurrentBag<LockQueryDiagnostic>();
+        var prepared = new List<(FileLockTarget Target, IReadOnlyList<string> Names)>();
+        foreach (var target in targets)
         {
-            Console.ForegroundColor = ConsoleColor.DarkYellow;
-            Console.WriteLine($"    [DEBUG] Target path: {targetPath}");
-            Console.WriteLine($"    [DEBUG] Is directory: {isDirectory}");
-            foreach (var np in ntPaths)
-                Console.WriteLine($"    [DEBUG] NT path candidate: {np}");
-            Console.ResetColor();
+            cancellationToken.ThrowIfCancellationRequested();
+            var names = GetNtPaths(target.Path);
+            if (names.Count == 0)
+                diagnostics.Add(new(LockDiagnosticKind.TargetFailure, "TargetNativePathUnavailable",
+                    "无法解析用于句柄匹配的路径", TargetPath: target.Path, Stage: "ResolveNativePath"));
+            else prepared.Add((target, names));
         }
+        if (prepared.Count == 0) return new([], [], diagnostics.ToArray());
 
-        // Open a probe handle to determine the "File" object type index,
-        // so we can skip all non-file handles (registry keys, events, etc.)
-        IntPtr probeHandle = CreateFileW(
-            "NUL", 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-
-        IntPtr infoPtr = IntPtr.Zero;
+        var matches = new ConcurrentBag<HandleLockMatch>();
+        IntPtr info = IntPtr.Zero;
+        var probe = CreateFileW("NUL", 0, ShareAll, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+        var processHandles = new Dictionary<int, IntPtr>();
+        var metadataByPid = new ConcurrentDictionary<int, ProcessMetadata>();
+        var accessLimitations = new ConcurrentDictionary<(int ProcessId, string Stage, int Error), LockQueryDiagnostic>();
+        var timeouts = new ConcurrentDictionary<int, int>();
+        var nameFailures = new ConcurrentDictionary<(int ProcessId, int? Status), int>();
         try
         {
-            int bufferSize = 0x100000; // 1 MB initial (handle tables are large)
-            int returnLength;
+            var size = 0x100000;
             int status;
-
-            // Keep growing the buffer until it's big enough
             do
             {
-                infoPtr = Marshal.AllocHGlobal(bufferSize);
-                status = NtQuerySystemInformation(SystemExtendedHandleInformation, infoPtr, bufferSize, out returnLength);
-                if (status == STATUS_INFO_LENGTH_MISMATCH)
-                {
-                    Marshal.FreeHGlobal(infoPtr);
-                    infoPtr = IntPtr.Zero;
-                    bufferSize = returnLength + 0x100000;
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (info != IntPtr.Zero) Marshal.FreeHGlobal(info);
+                info = IntPtr.Zero;
+                info = Marshal.AllocHGlobal(size);
+                status = NtQuerySystemInformation(SystemExtendedHandleInformation, info, size, out var needed);
+                if (status == STATUS_INFO_LENGTH_MISMATCH) size = checked(Math.Max(needed, size) + 0x100000);
             } while (status == STATUS_INFO_LENGTH_MISMATCH);
 
             if (status != 0)
             {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"  [!] NtQuerySystemInformation returned 0x{status:X8} — handle scan skipped.");
-                Console.ResetColor();
-                return results.Values.ToList();
+                diagnostics.Add(new(LockDiagnosticKind.EngineFailure, "HandleSnapshotFailed",
+                    $"系统句柄枚举失败：NTSTATUS 0x{status:X8}", Stage: "NtQuerySystemInformation", NativeError: status));
+                return new([], [], diagnostics.ToArray());
             }
 
-            // Parse the extended handle table
-            // Layout: ULONG_PTR NumberOfHandles, ULONG_PTR Reserved, then entries
-            long handleCount;
-            int entryOffset;
-            if (IntPtr.Size == 8)
+            var count = IntPtr.Size == 8 ? Marshal.ReadInt64(info) : Marshal.ReadInt32(info);
+            var offset = IntPtr.Size * 2;
+            var entrySize = Marshal.SizeOf<HandleEntry>();
+            ushort fileType = 0;
+            var entries = new List<HandleEntry>();
+            for (long index = 0; index < count; index++)
             {
-                handleCount = Marshal.ReadInt64(infoPtr, 0);
-                entryOffset = 16; // skip NumberOfHandles (8) + Reserved (8)
+                cancellationToken.ThrowIfCancellationRequested();
+                var entry = Marshal.PtrToStructure<HandleEntry>(IntPtr.Add(info, checked(offset + (int)(index * entrySize))));
+                var pid = checked((int)entry.UniqueProcessId);
+                if (pid == Environment.ProcessId && entry.HandleValue == probe) fileType = entry.ObjectTypeIndex;
+                if (pid != Environment.ProcessId && pid is not (0 or 4)) entries.Add(entry);
             }
-            else
+            if (fileType == 0)
             {
-                handleCount = Marshal.ReadInt32(infoPtr, 0);
-                entryOffset = 8; // skip NumberOfHandles (4) + Reserved (4)
+                diagnostics.Add(new(LockDiagnosticKind.EngineFailure, "FileHandleTypeUnavailable",
+                    "无法识别文件句柄类型，已跳过句柄扫描", Stage: "IdentifyFileHandleType"));
+                return new([], [], diagnostics.ToArray());
+            }
+            var groups = entries.Where(e => e.ObjectTypeIndex == fileType)
+                .GroupBy(e => (int)e.UniqueProcessId).ToArray();
+            foreach (var group in groups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                processHandles[group.Key] = OpenProcess(ScanProcessAccess, false, group.Key);
+                if (processHandles[group.Key] == IntPtr.Zero)
+                    ReportAccessLimitation(group.Key, "OpenProcess", Marshal.GetLastWin32Error());
             }
 
-            int entrySize = Marshal.SizeOf<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>();
-            int currentPid = Environment.ProcessId;
-
-            // ── Pass 1: Find the "File" object type index using our probe handle ──
-            ushort fileTypeIndex = 0;
-            if (probeHandle != INVALID_HANDLE_VALUE)
+            Parallel.ForEach(groups, new ParallelOptions
             {
-                for (long i = 0; i < handleCount; i++)
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8)
+            }, group =>
+            {
+                var processHandle = processHandles[group.Key];
+                if (processHandle == IntPtr.Zero) return; // Exited or inaccessible process.
+                var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in group)
                 {
-                    var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(
-                        IntPtr.Add(infoPtr, entryOffset + (int)(i * entrySize)));
-
-                    if ((int)(long)entry.UniqueProcessId == currentPid
-                        && entry.HandleValue == probeHandle)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (found.Count == prepared.Count) break;
+                    if (!DuplicateHandle(processHandle, entry.HandleValue, GetCurrentProcess(),
+                            out var duplicate, 0, false, DUPLICATE_SAME_ACCESS))
                     {
-                        fileTypeIndex = entry.ObjectTypeIndex;
-                        break;
+                        ReportAccessLimitation(group.Key, "DuplicateHandle", Marshal.GetLastWin32Error());
+                        continue;
+                    }
+                    // Named pipes and device handles can block NtQueryObject; only inspect disk files.
+                    if (GetFileType(duplicate) != 1)
+                    {
+                        CloseHandle(duplicate);
+                        continue;
+                    }
+                    var nameResult = QueryObjectNameSafe(duplicate, cancellationToken);
+                    if (nameResult.TimedOut) timeouts.AddOrUpdate(group.Key, 1, (_, observedCount) => observedCount + 1);
+                    else if (nameResult.NativeStatus is null || !IsNormalNameStatus(nameResult.NativeStatus.Value))
+                        nameFailures.AddOrUpdate((group.Key, nameResult.NativeStatus), 1, (_, observedCount) => observedCount + 1);
+                    var name = nameResult.Name;
+                    if (name is null) continue;
+                    foreach (var (target, names) in prepared)
+                    {
+                        if (!found.Contains(target.Path) && names.Any(n => MatchesPath(name, n, target.IsDirectory)))
+                            found.Add(target.Path);
                     }
                 }
-                CloseHandle(probeHandle);
-                probeHandle = IntPtr.Zero;
-            }
-
-            if (debug)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
-                Console.WriteLine($"    [DEBUG] File object type index: {fileTypeIndex}");
-                Console.ResetColor();
-            }
-
-            // ── Pass 2: Collect candidate file handles, filtering by type ──
-            var candidates = new List<(int pid, IntPtr handleValue)>();
-            for (long i = 0; i < handleCount; i++)
-            {
-                var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(
-                    IntPtr.Add(infoPtr, entryOffset + (int)(i * entrySize)));
-
-                int pid = (int)(long)entry.UniqueProcessId;
-                if (pid == currentPid || pid == 0 || pid == 4) // skip self, idle, system
-                    continue;
-
-                // Skip non-file handles when we know the file type index
-                if (fileTypeIndex != 0 && entry.ObjectTypeIndex != fileTypeIndex)
-                    continue;
-
-                candidates.Add((pid, entry.HandleValue));
-            }
-
-            if (debug)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
-                Console.WriteLine($"    [DEBUG] Total handles: {handleCount}, file-type candidates: {candidates.Count}");
-                Console.ResetColor();
-            }
-
-            // Pre-open process handles sequentially (fast, avoids concurrency issues)
-            var uniquePids = new HashSet<int>(candidates.Select(c => c.pid));
-            var processHandles = new Dictionary<int, IntPtr>(uniquePids.Count);
-            foreach (var pid in uniquePids)
-                processHandles[pid] = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-
-            // ── Parallel scan: DuplicateHandle + NtQueryObject on file candidates ──
-            Parallel.ForEach(
-                Partitioner.Create(0, candidates.Count),
-                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
-                (range) =>
+                if (found.Count > 0)
                 {
-                    for (int idx = range.Item1; idx < range.Item2; idx++)
-                    {
-                        var (pid, handleValue) = candidates[idx];
-
-                        if (results.ContainsKey(pid)) // already found this process
-                            continue;
-
-                        IntPtr hProcess = processHandles[pid];
-                        if (hProcess == IntPtr.Zero)
-                            continue;
-
-                        IntPtr dupHandle = IntPtr.Zero;
-                        try
-                        {
-                            if (!DuplicateHandle(hProcess, handleValue,
-                                GetCurrentProcess(), out dupHandle, 0, false, DUPLICATE_SAME_ACCESS))
-                                continue;
-
-                            // Query object name with a timeout to avoid deadlocks
-                            string? handleName = QueryObjectNameSafe(dupHandle);
-                            if (handleName == null)
-                                continue;
-
-                            // Check if the handle points to our target path
-                            bool isMatch = false;
-                            foreach (var ntPath in ntPaths)
-                            {
-                                if (isDirectory)
-                                {
-                                    // Match the directory itself OR any file within it
-                                    isMatch = handleName.Equals(ntPath, StringComparison.OrdinalIgnoreCase)
-                                           || handleName.StartsWith(ntPath + "\\", StringComparison.OrdinalIgnoreCase);
-                                }
-                                else
-                                {
-                                    isMatch = handleName.Equals(ntPath, StringComparison.OrdinalIgnoreCase);
-                                }
-                                if (isMatch) break;
-                            }
-
-                            if (isMatch)
-                            {
-                                string processName = "Unknown";
-                                try { processName = Process.GetProcessById(pid).ProcessName; }
-                                catch { }
-
-                                results.TryAdd(pid, new LockingProcess
-                                {
-                                    ProcessId = pid,
-                                    ProcessName = processName,
-                                    ApplicationType = "Handle",
-                                    ExecutablePath = LockingProcess.GetProcessPath(pid)
-                                });
-                            }
-                        }
-                        catch { /* handle may be invalid or process exited */ }
-                        finally
-                        {
-                            if (dupHandle != IntPtr.Zero) CloseHandle(dupHandle);
-                        }
-                    }
-                });
-
-            // Close cached process handles
-            foreach (var h in processHandles.Values)
+                    var metadata = GetMetadata(group.Key);
+                    foreach (var diagnostic in metadata.Diagnostics) diagnostics.Add(diagnostic);
+                    matches.Add(new(LockingProcess.FromMetadata(metadata, "Handle"),
+                        found.Order(StringComparer.OrdinalIgnoreCase).ToArray()));
+                }
+            });
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var limitation in accessLimitations.Values) diagnostics.Add(limitation);
+            foreach (var (failure, failureCount) in nameFailures)
             {
-                if (h != IntPtr.Zero) CloseHandle(h);
+                cancellationToken.ThrowIfCancellationRequested();
+                var diagnostic = CreateNameQueryLimitation(failure.ProcessId, failure.Status, failureCount,
+                    GetMetadata(failure.ProcessId));
+                if (diagnostic is not null) diagnostics.Add(diagnostic);
             }
+            foreach (var (processId, timeoutCount) in timeouts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var metadata = GetMetadata(processId);
+                diagnostics.Add(new(LockDiagnosticKind.CoverageLimitation, "HandleNameTimeout",
+                    $"{timeoutCount} 个句柄名称读取超时，尚无法判断是否关联查询目标", ProcessId: processId,
+                    Stage: "ReadHandleName", ProcessName: metadata.ProcessName, ProtectionLevel: metadata.ProtectionLevel));
+            }
+            return new(matches.ToArray(), prepared.Select(p => p.Target.Path).ToArray(), diagnostics
+                .OrderBy(diagnostic => diagnostic.Kind).ThenBy(diagnostic => diagnostic.ProcessId)
+                .ThenBy(diagnostic => diagnostic.Stage).ToArray());
         }
         finally
         {
-            if (probeHandle != IntPtr.Zero && probeHandle != INVALID_HANDLE_VALUE)
-                CloseHandle(probeHandle);
-            if (infoPtr != IntPtr.Zero)
-                Marshal.FreeHGlobal(infoPtr);
+            foreach (var handle in processHandles.Values) if (handle != IntPtr.Zero) CloseHandle(handle);
+            if (probe != IntPtr.Zero && probe != INVALID_HANDLE_VALUE) CloseHandle(probe);
+            if (info != IntPtr.Zero) Marshal.FreeHGlobal(info);
         }
 
-        return results.Values.ToList();
-    }
+        ProcessMetadata GetMetadata(int processId) => metadataByPid.GetOrAdd(processId, ProcessMetadataReader.Read);
 
-    /// <summary>
-    /// Query the kernel object name for a duplicated handle.
-    /// Runs in a background thread with a timeout to avoid deadlocks
-    /// on certain handle types (named pipes, ALPC ports, etc.).
-    /// </summary>
-    private static string? QueryObjectNameSafe(IntPtr handle)
-    {
-        string? result = null;
-        var thread = new Thread(() =>
+        void ReportAccessLimitation(int processId, string stage, int error)
         {
-            result = QueryObjectName(handle);
-        })
-        { IsBackground = true };
-        thread.Start();
-
-        // Wait up to 200ms — if it hangs, abandon it
-        if (!thread.Join(200))
-            return null;
-
-        return result;
+            if (error is 6 or 87) return; // Invalid handles / exited PIDs are expected snapshot races.
+            var key = (processId, stage, error);
+            if (accessLimitations.ContainsKey(key)) return;
+            var diagnostic = CreateAccessLimitation(processId, stage, error, GetMetadata(processId));
+            if (diagnostic is not null) accessLimitations.TryAdd(key, diagnostic);
+        }
     }
 
-    private static string? QueryObjectName(IntPtr handle)
+    internal static LockQueryDiagnostic? CreateAccessLimitation(int processId, string stage, int error,
+        ProcessMetadata metadata) => error is 6 or 87 ? null
+        : new(LockDiagnosticKind.CoverageLimitation,
+            error == 5 ? "ProcessHandleAccessDenied" : "ProcessHandleUnavailable",
+            error == 5 ? "进程句柄访问被拒绝，尚无法判断是否关联查询目标"
+                : "部分进程句柄不可读取，尚无法判断是否关联查询目标",
+            ProcessId: processId, Stage: stage, RequestedAccess: ScanProcessAccess,
+            NativeError: error == 0 ? null : error, ProcessName: metadata.ProcessName,
+            ProtectionLevel: metadata.ProtectionLevel);
+
+    internal static LockQueryDiagnostic? CreateNameQueryLimitation(int processId, int? status, int count,
+        ProcessMetadata metadata) => status is { } nativeStatus && IsNormalNameStatus(nativeStatus) ? null
+        : new(LockDiagnosticKind.CoverageLimitation, "HandleNameQueryFailed",
+            $"{count} 个句柄名称无法读取，尚无法判断是否关联查询目标"
+            + (status is { } error ? $"（NTSTATUS 0x{error:X8}）" : string.Empty),
+            ProcessId: processId, Stage: "NtQueryObject", NativeError: status,
+            ProcessName: metadata.ProcessName, ProtectionLevel: metadata.ProtectionLevel);
+
+    private static bool IsNormalNameStatus(int status) => status == 0 || status == unchecked((int)0xC0000008);
+
+    internal static bool MatchesPath(string handleName, string targetName, bool directory)
     {
-        int bufferSize = 2048;
-        IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
+        var target = targetName.TrimEnd('\\');
+        return handleName.Equals(target, StringComparison.OrdinalIgnoreCase)
+            || directory && handleName.StartsWith(target + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Ownership of handle moves to the worker. A timeout must never close a handle still in use.
+    private sealed record HandleNameResult(string? Name, int? NativeStatus, bool TimedOut = false);
+
+    private static HandleNameResult QueryObjectNameSafe(IntPtr handle, CancellationToken token)
+    {
+        var acquired = false;
+        try { acquired = NameQuerySlots.Wait(200, token); }
+        finally { if (!acquired) CloseHandle(handle); }
+        if (!acquired) return new(null, null, true);
+        var result = new HandleNameResult(null, null);
+        var worker = new Thread(() =>
+        {
+            try { result = QueryObjectName(handle); }
+            catch (Exception) { result = new(null, null); }
+            finally { CloseHandle(handle); NameQuerySlots.Release(); }
+        }) { IsBackground = true, Name = "LockBreaker handle name" };
+        try { worker.Start(); }
+        catch { CloseHandle(handle); NameQuerySlots.Release(); throw; }
+        var completed = worker.Join(200);
+        token.ThrowIfCancellationRequested();
+        // Join establishes visibility. A timed-out worker still owns its handle and result.
+        return completed ? result : new(null, null, true);
+    }
+
+    private static HandleNameResult QueryObjectName(IntPtr handle)
+    {
+        var buffer = Marshal.AllocHGlobal(65536);
         try
         {
-            int status = NtQueryObject(handle, ObjectNameInformation, buffer, bufferSize, out int returnLength);
-            if (status != 0)
-                return null;
-
-            var nameInfo = Marshal.PtrToStructure<NativeMethods.OBJECT_NAME_INFORMATION>(buffer);
-            if (nameInfo.Name.Length == 0 || nameInfo.Name.Buffer == IntPtr.Zero)
-                return null;
-
-            return Marshal.PtrToStringUni(nameInfo.Name.Buffer, nameInfo.Name.Length / 2);
+            var status = NtQueryObject(handle, ObjectNameInformation, buffer, 65536, out _);
+            if (status != 0) return new(null, status);
+            var name = Marshal.PtrToStructure<OBJECT_NAME_INFORMATION>(buffer).Name;
+            return new(name.Length == 0 || name.Buffer == IntPtr.Zero ? null
+                : Marshal.PtrToStringUni(name.Buffer, name.Length / 2), status);
         }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
+        finally { Marshal.FreeHGlobal(buffer); }
     }
 
-    /// <summary>
-    /// Get all possible NT device paths for a Win32 path.
-    /// Handles OneDrive redirected paths, symlinks, and standard drive letters.
-    /// </summary>
     private static List<string> GetNtPaths(string path)
     {
         var paths = new List<string>();
-
-        // Standard conversion via QueryDosDevice
-        string? standardNt = ConvertToNtPath(path);
-        if (standardNt != null)
-            paths.Add(standardNt);
-
-        // Also try resolving the real/final path (follows reparse points like OneDrive)
-        try
+        Add(path);
+        var handle = CreateFileW(path, 0, ShareAll, IntPtr.Zero, OpenExisting, BackupSemantics, IntPtr.Zero);
+        if (handle != INVALID_HANDLE_VALUE)
         {
-            string? realPath = GetFinalPathName(path);
-            if (realPath != null && !realPath.Equals(path, StringComparison.OrdinalIgnoreCase))
+            try
             {
-                string? realNt = ConvertToNtPath(realPath);
-                if (realNt != null && !paths.Contains(realNt, StringComparer.OrdinalIgnoreCase))
-                    paths.Add(realNt);
+                var buffer = new char[32768];
+                var length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Length, 0);
+                if (length > 0 && length < buffer.Length) Add(new string(buffer, 0, (int)length));
+            }
+            finally { CloseHandle(handle); }
+        }
+        return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        void Add(string candidate)
+        {
+            if (candidate.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) candidate = @"\\" + candidate[8..];
+            else if (candidate.StartsWith(@"\\?\", StringComparison.Ordinal)) candidate = candidate[4..];
+            if (candidate.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                paths.Add(@"\Device\Mup\" + candidate[2..]);
+                paths.Add(@"\Device\LanmanRedirector\" + candidate[2..]);
+            }
+            else if (candidate.Length >= 2 && candidate[1] == ':')
+            {
+                var buffer = new char[32768];
+                var length = QueryDosDevice(candidate[..2], buffer, (uint)buffer.Length);
+                if (length > 0)
+                {
+                    var device = new string(buffer, 0, (int)length).Split('\0')[0];
+                    paths.Add(device + "\\" + candidate[2..].TrimStart('\\'));
+                }
             }
         }
-        catch { }
-
-        return paths;
     }
 
-    /// <summary>
-    /// Convert a Win32 path to an NT device path.
-    /// </summary>
-    private static string? ConvertToNtPath(string path)
-    {
-        string? root = Path.GetPathRoot(path);
-        if (root != null && root.Length >= 2 && root[1] == ':')
-        {
-            string dosDevice = root[..2]; // e.g. "C:"
-            var buffer = new char[1024];
-            uint result = QueryDosDevice(dosDevice, buffer, (uint)buffer.Length);
-            if (result > 0)
-            {
-                string devicePath = new string(buffer, 0, (int)result).TrimEnd('\0').Split('\0')[0];
-                string relativePath = path[root.Length..];
-                return devicePath + "\\" + relativePath.TrimStart('\\');
-            }
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Resolve symlinks, junctions, and reparse points to get the final path.
-    /// Critical for OneDrive paths which are reparse points.
-    /// </summary>
-    private static string? GetFinalPathName(string path)
-    {
-        IntPtr hFile = CreateFileW(
-            path,
-            0, // no access needed, just querying
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            IntPtr.Zero,
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS, // required for directories
-            IntPtr.Zero);
-
-        if (hFile == INVALID_HANDLE_VALUE)
-            return null;
-
-        try
-        {
-            var buffer = new char[1024];
-            uint result = GetFinalPathNameByHandleW(hFile, buffer, (uint)buffer.Length, 0);
-            if (result > 0 && result < buffer.Length)
-            {
-                string finalPath = new string(buffer, 0, (int)result);
-                // Remove the \\?\ prefix if present
-                if (finalPath.StartsWith(@"\\?\"))
-                    finalPath = finalPath[4..];
-                return finalPath;
-            }
-        }
-        finally
-        {
-            CloseHandle(hFile);
-        }
-        return null;
-    }
-
-    // ── Additional P/Invoke for path resolution ──
-
-    private const uint FILE_SHARE_READ = 0x01;
-    private const uint FILE_SHARE_WRITE = 0x02;
-    private const uint FILE_SHARE_DELETE = 0x04;
-    private const uint OPEN_EXISTING = 3;
-    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
-
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr CreateFileW(
-        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
-        IntPtr lpSecurityAttributes, uint dwCreationDisposition,
-        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
+    private static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern uint GetFinalPathNameByHandleW(
-        IntPtr hFile, char[] lpszFilePath, uint cchFilePath, uint dwFlags);
-
+    private static extern uint GetFinalPathNameByHandleW(IntPtr handle, [Out] char[] path, uint length, uint flags);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern uint QueryDosDevice(string lpDeviceName, char[] lpTargetPath, uint ucchMax);
+    private static extern uint QueryDosDevice(string device, [Out] char[] target, uint length);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint GetFileType(IntPtr handle);
 }

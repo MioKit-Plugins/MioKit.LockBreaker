@@ -6,13 +6,15 @@ namespace MioKit.LockBreaker.Nodes;
 /// 普通开窗节点：打开端口占用窗口；支持热键、置顶、最近使用与别名搜索。
 /// </summary>
 [EavType(FileLockFinderConst.OpenPortLockWindowNodeTypeId)]
+[NodePalette("占用查询")]
 public class OpenPortLockWindowNode :
     MioObject,
     IHotkeyFeature,
     IPinnedFeature,
     IUseFeature,
     IAliasNameFeature,
-    ISearchableFeature
+    ISearchableFeature,
+    IInvocationPresentationFeature
 {
     public OpenPortLockWindowNode(string id) : base(id)
     {
@@ -20,11 +22,17 @@ public class OpenPortLockWindowNode :
 
     public override Guid MioType => FileLockFinderConst.OpenPortLockWindowNodeType;
 
+    public InvocationPresentation GetPresentation(InvocationPresentationRequest request) => new()
+    {
+        Interaction = InvocationInteraction.CompleteBeforeExecution
+    };
+
     public ValueTask SearchAsync(
         SearchRequest request,
         IWriteOnlyResultList<SearchResult> writeOnlyResultList,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (request.IsEmptyText)
             return ValueTask.CompletedTask;
 
@@ -44,6 +52,7 @@ public class OpenPortLockWindowNode :
 
     public async Task InvokeAsync(InvokeContext context)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
         int? port = null;
         var autoQuery = false;
 
@@ -53,7 +62,9 @@ public class OpenPortLockWindowNode :
             autoQuery = true;
         }
 
-        LockWindowLauncher.OpenPortLock(port, autoQuery);
+        await FileLockFinderRegister.Instance.ComponentContext.Resolve<LockWindowLauncher>()
+            .OpenPortLockAsync(port, autoQuery, context.CancellationToken);
+        context.CancellationToken.ThrowIfCancellationRequested();
         await this.IncreaseAsync();
     }
 }

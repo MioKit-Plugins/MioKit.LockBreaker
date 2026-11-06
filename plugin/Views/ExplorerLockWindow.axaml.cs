@@ -1,4 +1,4 @@
-﻿using Avalonia.Interactivity;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Ti.Avalonia.Shadcn.Controls;
 
@@ -11,18 +11,11 @@ public partial class ExplorerLockWindow : ShadWindow
         InitializeComponent();
     }
 
-    protected override async void OnLoaded(RoutedEventArgs e)
+    protected override void OnClosed(EventArgs e)
     {
-        base.OnLoaded(e);
-        try
-        {
-            if (DataContext is ExplorerLockWindowModel { AutoQueryOnLoad: true } model)
-                await model.RefreshAsync();
-        }
-        catch
-        {
-            // 查询失败已在 ViewModel 中写入 StatusText
-        }
+        if (DataContext is ExplorerLockWindowModel model)
+            model.Dispose();
+        base.OnClosed(e);
     }
 
     private async void OnPickFileClick(object? sender, RoutedEventArgs e)
@@ -33,11 +26,10 @@ public partial class ExplorerLockWindow : ShadWindow
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择要查询占用的文件",
-            AllowMultiple = false
+            AllowMultiple = true
         });
 
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path)
-            model.TargetPath = path;
+        model.AddTargets(files.Select(file => file.TryGetLocalPath()).OfType<string>());
     }
 
     private async void OnPickFolderClick(object? sender, RoutedEventArgs e)
@@ -48,10 +40,9 @@ public partial class ExplorerLockWindow : ShadWindow
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "选择要查询占用的文件夹",
-            AllowMultiple = false
+            AllowMultiple = true
         });
 
-        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
-            model.TargetPath = path;
+        model.AddTargets(folders.Select(folder => folder.TryGetLocalPath()).OfType<string>());
     }
 }

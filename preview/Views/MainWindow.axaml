@@ -1,54 +1,24 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:shad="https://github.com/tiny-isle/Ti.Avalonia.Shadcn"
         x:Class="MioKit.LockBreaker.Preview.Views.MainWindow"
-        Title="MioKit.LockBreaker Preview"
-        Width="960"
-        Height="640"
-        MinWidth="720"
-        MinHeight="480"
+        x:CompileBindings="True"
+        Title="MioKit.LockBreaker 预览"
+        Width="960" Height="720" MinWidth="700" MinHeight="520"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource ShadBackgroundBrush}">
-  <ScrollViewer>
-  <StackPanel Margin="24" Spacing="20">
-    <StackPanel Spacing="4">
-      <TextBlock Text="Shadcn 控件预览"
-                 FontSize="20"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource ShadForegroundBrush}" />
-      <TextBlock Text="在此预览插件 Avalonia 控件的 Shad 主题样式。将 plugin/Views 中的 UserControl 挂到下方预览区即可。"
-                 TextWrapping="Wrap"
-                 Foreground="{DynamicResource ShadMutedForegroundBrush}" />
-    </StackPanel>
-
-    <shad:Card Title="主题样例"
-               Description="确认 Ti.Avalonia.Shadcn 资源已正确加载。">
-      <WrapPanel Margin="24,0"
-                 Orientation="Horizontal"
-                 ItemSpacing="10"
-                 LineSpacing="10">
-        <Button Content="主要" />
-        <Button Classes="Secondary" Content="次要" />
-        <Button Classes="Outline" Content="描边" />
-        <Button Classes="Ghost" Content="幽灵" />
-        <Button Classes="Destructive" Content="危险" />
-      </WrapPanel>
-    </shad:Card>
-
-    <shad:Card Title="插件控件"
-               Description="在 MainWindow.axaml.cs 的 LoadPluginPreview() 中实例化你的视图。">
-      <Border Margin="24,0"
-              MinHeight="200"
-              Padding="16"
-              CornerRadius="{DynamicResource ShadCornerRadius}"
-              Background="{DynamicResource ShadCardBrush}"
-              BorderBrush="{DynamicResource ShadBorderBrush}"
-              BorderThickness="1">
-        <ContentControl x:Name="PluginPreviewHost"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch" />
-      </Border>
-    </shad:Card>
-  </StackPanel>
-  </ScrollViewer>
+    <Grid Margin="24" RowDefinitions="Auto,Auto,*" RowSpacing="20">
+        <StackPanel Spacing="6">
+            <TextBlock Text="占用查询 · 界面预览" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Text="使用固定样例展示真实插件控件。查询与结束按钮只执行预览操作。"
+                       Classes="Muted" TextWrapping="Wrap" />
+        </StackPanel>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+            <ComboBox x:Name="ScenarioPicker" SelectionChanged="OnScenarioChanged"
+                      HorizontalAlignment="Stretch" />
+            <Button Grid.Column="1" Classes="Outline" Content="打开文件窗口" Click="OnOpenFileWindow" />
+            <Button Grid.Column="2" Classes="Outline" Content="打开端口窗口" Click="OnOpenPortWindow" />
+        </Grid>
+        <ContentControl Grid.Row="2" x:Name="PluginPreviewHost"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+    </Grid>
 </Window>

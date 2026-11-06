@@ -1,178 +1,186 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:models="clr-namespace:MioKit.LockBreaker.Models"
              xmlns:views="clr-namespace:MioKit.LockBreaker.Views"
-             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="360"
              x:Class="MioKit.LockBreaker.Views.ProcessListUserControl"
-             x:DataType="views:LockQueryWindowModelBase">
-    <UserControl.Styles>
-        <Style Selector="ListBoxItem">
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0,0,0,8" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="FocusAdorner" Value="{x:Null}" />
-        </Style>
-        <Style Selector="ListBoxItem:pointerover">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBoxItem:selected">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBoxItem:focus">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:focus">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:pointerover">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="ListBoxItem:focus /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="ListBoxItem:pointerover Border.ProcessCard">
-            <Setter Property="Background" Value="{DynamicResource ShadMutedBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ShadBorderBrush}" />
-        </Style>
-        <Style Selector="ListBoxItem:selected Border.ProcessCard">
-            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:pointerover Border.ProcessCard">
-            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
-        </Style>
-        <Style Selector="ListBoxItem:selected:focus Border.ProcessCard">
-            <Setter Property="Background" Value="{DynamicResource ShadAccentBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ShadPrimaryBrush}" />
-        </Style>
-    </UserControl.Styles>
+             x:Name="ResultsView"
+             x:DataType="views:LockQueryWindowModelBase"
+             x:CompileBindings="True"
+             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+             Foreground="{DynamicResource ShadForegroundBrush}">
+    <UserControl.Resources>
+        <ControlTheme x:Key="ProcessRowTheme" TargetType="DataGridRow"
+                      BasedOn="{StaticResource {x:Type DataGridRow}}">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Foreground" Value="{DynamicResource ShadForegroundBrush}" />
+            <Style Selector="^:selected">
+                <Setter Property="Foreground" Value="{DynamicResource ShadForegroundBrush}" />
+            </Style>
+            <Style Selector="^:selected /template/ Border#BackgroundRectangle">
+                <Setter Property="Background" Value="{DynamicResource ShadMutedBrush}" />
+            </Style>
+        </ControlTheme>
+    </UserControl.Resources>
 
-    <Border CornerRadius="{DynamicResource ShadCornerRadius}"
-            Background="{DynamicResource ShadCardBrush}"
-            BorderBrush="{DynamicResource ShadBorderBrush}"
-            BorderThickness="1"
-            BoxShadow="{DynamicResource ShadShadowSm}"
-            ClipToBounds="True">
-        <Grid>
-            <ListBox ItemsSource="{Binding Items}"
-                     SelectedItem="{Binding SelectedItem}"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Padding="12"
-                     IsVisible="{Binding HasItems}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="models:LockOwnerItem">
-                        <Border Classes="ProcessCard"
-                                Padding="14,12"
-                                CornerRadius="{DynamicResource ShadCornerRadius}"
-                                Background="{DynamicResource ShadMutedBrush-50}"
-                                BorderBrush="{DynamicResource ShadBorderBrush}"
-                                BorderThickness="1">
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                    <TextBlock Grid.Column="0"
-                                               FontSize="14"
-                                               FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource ShadCardForegroundBrush}"
-                                               Text="{Binding ProcessName}" />
-                                    <Border Grid.Column="1"
-                                            Padding="8,2"
-                                            CornerRadius="{DynamicResource ShadCornerRadiusSmall}"
-                                            Background="{DynamicResource ShadMutedBrush}"
-                                            BorderBrush="{DynamicResource ShadBorderBrush}"
-                                            BorderThickness="1"
-                                            VerticalAlignment="Center">
-                                        <TextBlock FontSize="11"
-                                                   FontWeight="Medium"
-                                                   Foreground="{DynamicResource ShadMutedForegroundBrush}"
-                                                   Text="{Binding ProcessId, StringFormat=PID {0}}" />
-                                    </Border>
-                                </Grid>
+    <Grid RowDefinitions="*,Auto" RowSpacing="8">
+        <Grid x:Name="ContentLayout" ColumnDefinitions="*,286" ColumnSpacing="10">
+            <Grid x:Name="TablePane" MinHeight="108">
+                <DataGrid x:Name="ProcessTable" ItemsSource="{Binding Items}"
+                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserSortColumns="False" CanUserResizeColumns="True"
+                          CanUserReorderColumns="False" SelectionMode="Single"
+                          RowHeight="38" ColumnHeaderHeight="32"
+                          RowTheme="{StaticResource ProcessRowTheme}"
+                          GridLinesVisibility="Horizontal"
+                          RowBackground="{DynamicResource ShadBackgroundBrush}"
+                          Foreground="{DynamicResource ShadForegroundBrush}">
+                    <DataGrid.Styles>
+                        <Style Selector="DataGridColumnHeader">
+                            <Setter Property="MinHeight" Value="32" />
+                        </Style>
+                    </DataGrid.Styles>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="进程" Width="*" MinWidth="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:LockOwnerItem">
+                                    <TextBlock Text="{Binding ProcessName}" ToolTip.Tip="{Binding ProcessName}"
+                                               FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource ShadForegroundBrush}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="PID" Width="68">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:LockOwnerItem">
+                                    <TextBlock Text="{Binding ProcessId}" FontSize="12"
+                                               Foreground="{DynamicResource ShadForegroundBrush}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="{Binding #ResultsView.((views:LockQueryWindowModelBase)DataContext).ResourceCountHeader}" Width="72">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:LockOwnerItem">
+                                    <TextBlock Text="{Binding ResourceCount}" FontSize="12"
+                                               Foreground="{DynamicResource ShadForegroundBrush}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="状态" Width="82">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:LockOwnerItem">
+                                    <TextBlock Text="{Binding ProtectionText}" FontSize="12"
+                                               Foreground="{DynamicResource ShadForegroundBrush}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Border IsVisible="{Binding !HasItems}" Margin="1,33,1,1"
+                        Background="{DynamicResource ShadBackgroundBrush}" Padding="20">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" MaxWidth="440">
+                        <TextBlock Text="{Binding EmptyTitle}" FontSize="15" FontWeight="SemiBold"
+                                   TextAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding EmptyDescription}" FontSize="12"
+                                   TextAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <ProgressBar VerticalAlignment="Top" Height="2" IsIndeterminate="True"
+                             IsVisible="{Binding IsLoading}" />
+            </Grid>
 
-                                <TextBlock Grid.Row="1"
-                                           FontSize="12"
-                                           TextWrapping="Wrap"
-                                           IsVisible="{Binding HasDetail}"
-                                           Foreground="{DynamicResource ShadMutedForegroundBrush}"
-                                           Text="{Binding Detail}" />
-
-                                <TextBlock Grid.Row="2"
-                                           FontSize="12"
-                                           TextWrapping="Wrap"
-                                           IsVisible="{Binding HasPortMeta}"
-                                           Foreground="{DynamicResource ShadMutedForegroundBrush}"
-                                           Text="{Binding PortMetaText}" />
-
-                                <TextBlock Grid.Row="3"
-                                           FontSize="11"
-                                           TextWrapping="Wrap"
-                                           Opacity="0.9"
-                                           IsVisible="{Binding HasExecutablePath}"
-                                           Foreground="{DynamicResource ShadLowTextBrush}"
-                                           Text="{Binding ExecutablePath}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-
-            <StackPanel HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="6"
-                        Margin="24"
-                        IsVisible="{Binding !HasItems}">
-                <TextBlock Text="暂无占用进程"
-                           FontSize="15"
-                           FontWeight="SemiBold"
-                           HorizontalAlignment="Center"
-                           Foreground="{DynamicResource ShadMutedForegroundBrush}" />
-                <TextBlock Text="查询后将在此列出占用目标的进程"
-                           FontSize="12"
-                           HorizontalAlignment="Center"
-                           TextWrapping="Wrap"
-                           TextAlignment="Center"
-                           Foreground="{DynamicResource ShadLowTextBrush}" />
-            </StackPanel>
+            <Border x:Name="DetailsPane" Grid.Column="1" Padding="12"
+                    Background="{DynamicResource ShadCardBrush}"
+                    BorderBrush="{DynamicResource ShadBorderBrush}" BorderThickness="1"
+                    CornerRadius="{DynamicResource ShadCornerRadiusSmall}">
+                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="进程详情" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="Outline Sm" Content="结束进程"
+                                Foreground="{DynamicResource ShadForegroundBrush}"
+                                BorderBrush="{DynamicResource ShadDangerBrush}"
+                                Command="{Binding KillSelectedCommand}" />
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                        <ContentControl Content="{Binding SelectedItem}" HorizontalContentAlignment="Stretch"
+                                        IsVisible="{Binding HasSelection}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate x:DataType="models:LockOwnerItem">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Spacing="4">
+                                            <SelectableTextBlock Text="{Binding ProcessName}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ProcessId, StringFormat=PID {0}}" FontSize="12" />
+                                            <TextBlock IsVisible="{Binding IsProtected}" FontSize="12" TextWrapping="Wrap"
+                                                       Text="该进程在插件保护名单中，无法在此结束。" />
+                                        </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding Details}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="models:LockDetailLine">
+                                                    <StackPanel Spacing="4" Margin="0,0,0,10">
+                                                        <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold" />
+                                                        <SelectableTextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="12" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <StackPanel Spacing="4" IsVisible="{Binding HasExecutablePath}">
+                                            <TextBlock Text="程序路径" FontSize="12" FontWeight="SemiBold" />
+                                            <SelectableTextBlock Text="{Binding ExecutablePath}" TextWrapping="Wrap" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Spacing="4" IsVisible="{Binding HasServiceName}">
+                                            <TextBlock Text="服务名称" FontSize="12" FontWeight="SemiBold" />
+                                            <SelectableTextBlock Text="{Binding ServiceName}" TextWrapping="Wrap" FontSize="12" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </ScrollViewer>
+                    <TextBlock Grid.Row="1" Text="选择一个进程查看占用详情。" FontSize="12"
+                               TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Center"
+                               IsVisible="{Binding !HasSelection}" />
+                </Grid>
+            </Border>
         </Grid>
-    </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}" />
+            <Button Grid.Column="1" Classes="Outline Sm" Content="查看诊断"
+                    ToolTip.Tip="{Binding DiagnosticSummary}" IsVisible="{Binding HasDiagnostics}">
+                <Button.Flyout>
+                    <Flyout Placement="TopEdgeAlignedRight">
+                        <ScrollViewer MaxHeight="320" Width="480" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="{Binding DiagnosticSummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <ItemsControl ItemsSource="{Binding Diagnostics}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:LockQueryDiagnostic">
+                                            <Grid ColumnDefinitions="3,*" ColumnSpacing="8" Margin="0,0,0,14">
+                                                <Border Background="{DynamicResource ShadWarningBrush}" IsVisible="{Binding IsFailure}" />
+                                                <StackPanel Grid.Column="1" Spacing="5">
+                                                    <TextBlock Text="{Binding Category}" FontWeight="SemiBold" FontSize="12" />
+                                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12" />
+                                                    <SelectableTextBlock Text="{Binding ContextText}" TextWrapping="Wrap" FontSize="12" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+            <Button Grid.Column="2" Content="操作结果" Classes="Ghost Sm" IsVisible="{Binding HasOperationFeedback}">
+                <Button.Flyout>
+                    <Flyout Placement="TopEdgeAlignedRight">
+                        <ScrollViewer Width="480" MaxHeight="220" HorizontalScrollBarVisibility="Disabled">
+                            <SelectableTextBlock Text="{Binding OperationFeedback}" TextWrapping="Wrap" FontSize="12" />
+                        </ScrollViewer>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+    </Grid>
 </UserControl>

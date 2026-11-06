@@ -1,7 +1,7 @@
 using Avalonia;
 using MioKit.LockBreaker.Preview;
 
-namespace LockFinder.Preview;
+namespace MioKit.LockBreaker.Preview;
 
 internal static class Program
 {

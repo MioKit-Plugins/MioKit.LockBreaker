@@ -37,13 +37,14 @@ internal static class ProcessTerminator
 
         try
         {
-            var process = Process.GetProcessById(processId);
+            using var process = Process.GetProcessById(processId);
             var name = process.ProcessName;
             if (IsCriticalProcess(name))
                 return $"拒绝结束关键系统进程：{name} (PID {processId})";
 
             process.Kill(entireProcessTree: true);
-            process.WaitForExit(5000);
+            if (!process.WaitForExit(5000))
+                return $"已发送结束请求，进程仍未退出：{name} (PID {processId})";
             return $"已结束：{name} (PID {processId})";
         }
         catch (ArgumentException)

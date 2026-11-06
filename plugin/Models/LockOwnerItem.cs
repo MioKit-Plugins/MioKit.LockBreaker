@@ -1,71 +1,45 @@
+using MioKit.LockBreaker.Services;
+
 namespace MioKit.LockBreaker.Models;
 
-public enum LockOwnerKind
-{
-    File,
-    Port
-}
+public sealed record LockDetailLine(string Label, string Value);
 
-public sealed class LockOwnerItem
+public abstract class LockOwnerItem
 {
-    public LockOwnerKind Kind { get; init; }
     public int ProcessId { get; init; }
     public string ProcessName { get; init; } = string.Empty;
     public string? ExecutablePath { get; init; }
     public string? ServiceName { get; init; }
-    public string Detail { get; init; } = string.Empty;
-
-    public string? Protocol { get; init; }
-    public string? LocalEndPoint { get; init; }
-    public string? RemoteEndPoint { get; init; }
-    public string? State { get; init; }
-
-    public bool IsPortLock => Kind == LockOwnerKind.Port;
-
     public bool HasExecutablePath => !string.IsNullOrWhiteSpace(ExecutablePath);
+    public bool HasServiceName => !string.IsNullOrWhiteSpace(ServiceName);
+    public bool IsProtected => ProcessTerminator.IsUnmanageable(ProcessId, ProcessName);
+    public string ProtectionText => IsProtected ? "系统保护" : "—";
+    public abstract int ResourceCount { get; }
+    public abstract string Summary { get; }
+    public abstract IReadOnlyList<LockDetailLine> Details { get; }
+}
 
-    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
+public sealed class FileLockOwnerItem : LockOwnerItem
+{
+    private IReadOnlyList<LockDetailLine>? _details;
+    public IReadOnlyList<string> TargetPaths { get; init; } = [];
+    public override int ResourceCount => TargetPaths.Count;
+    public override string Summary => $"占用 {TargetPaths.Count} 项";
+    public override IReadOnlyList<LockDetailLine> Details => _details ??= TargetPaths
+        .Select(path => new LockDetailLine("占用目标", path)).ToArray();
+}
 
-    public bool HasPortMeta =>
-        IsPortLock &&
-        (!string.IsNullOrWhiteSpace(Protocol) ||
-         !string.IsNullOrWhiteSpace(LocalEndPoint) ||
-         !string.IsNullOrWhiteSpace(RemoteEndPoint) ||
-         !string.IsNullOrWhiteSpace(State));
+public sealed record PortConnection(string Protocol, string LocalEndPoint, string RemoteEndPoint, string State);
 
-    public string PortMetaText
-    {
-        get
-        {
-            if (!IsPortLock)
-                return string.Empty;
-
-            var parts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(Protocol))
-                parts.Add(Protocol);
-            if (!string.IsNullOrWhiteSpace(LocalEndPoint) || !string.IsNullOrWhiteSpace(RemoteEndPoint))
-            {
-                var local = string.IsNullOrWhiteSpace(LocalEndPoint) ? "—" : LocalEndPoint;
-                var remote = string.IsNullOrWhiteSpace(RemoteEndPoint) ? "—" : RemoteEndPoint;
-                parts.Add($"{local} → {remote}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(State))
-                parts.Add(State);
-
-            return string.Join(" · ", parts);
-        }
-    }
-
-    public static LockOwnerItem FromFileLock(LockingProcess process) => new()
-    {
-        Kind = LockOwnerKind.File,
-        ProcessId = process.ProcessId,
-        ProcessName = process.ProcessName,
-        ExecutablePath = process.ExecutablePath,
-        ServiceName = process.ServiceName,
-        Detail = string.IsNullOrWhiteSpace(process.ServiceName)
-            ? process.ApplicationType
-            : $"{process.ApplicationType} · {process.ServiceName}"
-    };
+public sealed class PortLockOwnerItem : LockOwnerItem
+{
+    private IReadOnlyList<LockDetailLine>? _details;
+    public IReadOnlyList<PortConnection> Connections { get; init; } = [];
+    public override int ResourceCount => Connections.Count;
+    public override string Summary => Connections.Count == 0 ? string.Empty
+        : $"{Connections[0].Protocol} {Connections[0].LocalEndPoint} · {Connections[0].State}"
+          + (Connections.Count > 1 ? $" · 共 {Connections.Count} 条连接" : string.Empty);
+    public override IReadOnlyList<LockDetailLine> Details => _details ??= Connections
+        .Select(c => new LockDetailLine(c.Protocol, $"{c.LocalEndPoint} → {c.RemoteEndPoint} · {c.State}"))
+        .ToArray();
 }

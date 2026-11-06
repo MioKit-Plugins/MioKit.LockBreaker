@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace MioKit.LockBreaker;
 
 /// <summary>
@@ -12,6 +10,16 @@ public sealed class LockingProcess
     public string ApplicationType { get; init; } = string.Empty;
     public string? ExecutablePath { get; init; }
     public string? ServiceName { get; init; }
+
+    internal static LockingProcess FromMetadata(ProcessMetadata metadata, string applicationType = "",
+        string? serviceName = null) => new()
+    {
+        ProcessId = metadata.ProcessId,
+        ProcessName = metadata.ProcessName,
+        ExecutablePath = metadata.ExecutablePath,
+        ApplicationType = applicationType,
+        ServiceName = serviceName
+    };
 
     public override string ToString()
     {
@@ -26,34 +34,5 @@ public sealed class LockingProcess
     /// <summary>
     /// Try to get the full executable path for a process.
     /// </summary>
-    public static string? GetProcessPath(int pid)
-    {
-        try
-        {
-            var process = Process.GetProcessById(pid);
-            // Use MainModule if possible
-            try { return process.MainModule?.FileName; }
-            catch { /* access denied, try P/Invoke */ }
-
-            // Fallback: QueryFullProcessImageName
-            IntPtr hProcess = NativeMethods.OpenProcess(
-                NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-            if (hProcess != IntPtr.Zero)
-            {
-                try
-                {
-                    var buffer = new char[1024];
-                    int size = buffer.Length;
-                    if (NativeMethods.QueryFullProcessImageName(hProcess, 0, buffer, ref size))
-                        return new string(buffer, 0, size);
-                }
-                finally
-                {
-                    NativeMethods.CloseHandle(hProcess);
-                }
-            }
-        }
-        catch { /* process may have exited */ }
-        return null;
-    }
+    public static string? GetProcessPath(int pid) => ProcessMetadataReader.Read(pid).ExecutablePath;
 }

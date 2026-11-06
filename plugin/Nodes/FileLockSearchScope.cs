@@ -1,7 +1,7 @@
 namespace MioKit.LockBreaker.Nodes;
 
 /// <summary>
-/// 搜索组：剪贴板有文件时，用第一个路径生成「查看文件占用」结果。
+/// 搜索组：根据本次剪贴板文件快照生成批量「查看文件占用」结果。
 /// </summary>
 [EavType(FileLockFinderConst.FileLockSearchScopeTypeId)]
 public class FileLockSearchScope : MioObject, ISearchableFeature
@@ -25,24 +25,31 @@ public class FileLockSearchScope : MioObject, ISearchableFeature
         if (files is null || files.Count == 0)
             return ValueTask.CompletedTask;
 
-        var path = files[0];
-        if (string.IsNullOrWhiteSpace(path))
-            return ValueTask.CompletedTask;
-
         var openNode = FindOpenFileNode();
         if (openNode is null)
             return ValueTask.CompletedTask;
 
-        writeOnlyResultList.Add(new SearchResult(request, openNode)
-        {
-            Title = "查看文件占用（剪贴板）",
-            Description = path,
-            PinMode = SortPriority.Top,
-            Source = "文件占用",
-            Payload = path
-        });
+        if (CreateClipboardResult(request, openNode) is { } result)
+            writeOnlyResultList.Add(result);
 
         return ValueTask.CompletedTask;
+    }
+
+    internal static SearchResult? CreateClipboardResult(SearchRequest request, OpenFileLockWindowNode openNode)
+    {
+        var paths = OpenFileLockWindowNode.ResolveTargetPaths(request.Context.Clipboard.Files);
+        if (paths is null)
+            return null;
+
+        return new SearchResult(request, openNode)
+        {
+            Title = paths.Count == 1 ? "查看文件占用（剪贴板）" : $"查看文件占用（剪贴板，{paths.Count} 项）",
+            Description = string.Join("；", paths.Take(3))
+                + (paths.Count > 3 ? $"；另有 {paths.Count - 3} 项" : string.Empty),
+            PinMode = SortPriority.Top,
+            Source = "文件占用",
+            Payload = paths
+        };
     }
 
     private static OpenFileLockWindowNode? FindOpenFileNode()

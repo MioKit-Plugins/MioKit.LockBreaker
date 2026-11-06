@@ -6,13 +6,15 @@ namespace MioKit.LockBreaker.Nodes;
 /// 普通开窗节点：打开文件占用窗口；支持热键、置顶、最近使用与别名搜索。
 /// </summary>
 [EavType(FileLockFinderConst.OpenFileLockWindowNodeTypeId)]
+[NodePalette("占用查询")]
 public class OpenFileLockWindowNode :
     MioObject,
     IHotkeyFeature,
     IPinnedFeature,
     IUseFeature,
     IAliasNameFeature,
-    ISearchableFeature
+    ISearchableFeature,
+    IInvocationPresentationFeature
 {
     public OpenFileLockWindowNode(string id) : base(id)
     {
@@ -20,11 +22,17 @@ public class OpenFileLockWindowNode :
 
     public override Guid MioType => FileLockFinderConst.OpenFileLockWindowNodeType;
 
+    public InvocationPresentation GetPresentation(InvocationPresentationRequest request) => new()
+    {
+        Interaction = InvocationInteraction.CompleteBeforeExecution
+    };
+
     public ValueTask SearchAsync(
         SearchRequest request,
         IWriteOnlyResultList<SearchResult> writeOnlyResultList,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (request.IsEmptyText)
             return ValueTask.CompletedTask;
 
@@ -44,17 +52,27 @@ public class OpenFileLockWindowNode :
 
     public async Task InvokeAsync(InvokeContext context)
     {
-        string? path = null;
-        var autoQuery = false;
+        context.CancellationToken.ThrowIfCancellationRequested();
+        var paths = ResolveTargetPaths(context.SearchResult?.Payload);
 
-        if (context.SearchResult?.Payload is string payloadPath &&
-            !string.IsNullOrWhiteSpace(payloadPath))
-        {
-            path = payloadPath;
-            autoQuery = true;
-        }
-
-        LockWindowLauncher.OpenFileLock(path, autoQuery);
+        await FileLockFinderRegister.Instance.ComponentContext.Resolve<LockWindowLauncher>()
+            .OpenFileLockAsync(paths, autoQuery: paths is not null, context.CancellationToken);
+        context.CancellationToken.ThrowIfCancellationRequested();
         await this.IncreaseAsync();
+    }
+
+    internal static IReadOnlyList<string>? ResolveTargetPaths(object? payload)
+    {
+        IEnumerable<string> paths = payload switch
+        {
+            string path => [path],
+            IReadOnlyList<string> batch => batch,
+            _ => []
+        };
+        var targets = paths.Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return targets.Length == 0 ? null : targets;
     }
 }
