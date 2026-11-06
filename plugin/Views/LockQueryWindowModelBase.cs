@@ -15,6 +15,9 @@ public abstract partial class LockQueryWindowModelBase : ObservableObject, IDisp
     private bool _isTerminating;
     protected ILockOperations Operations { get; }
 
+    /// <summary>Optional UI confirm hook. Null skips confirmation (unit tests / headless).</summary>
+    public Func<IReadOnlyList<LockOwnerItem>, Task<bool>>? ConfirmTerminateAsync { get; set; }
+
     [ObservableProperty] private string _windowTitle = "占用查询";
     [ObservableProperty] private string _statusText = "添加目标后开始查询";
     [ObservableProperty] private string _operationFeedback = string.Empty;
@@ -180,8 +183,11 @@ public abstract partial class LockQueryWindowModelBase : ObservableObject, IDisp
     private bool CanKillAll() => !_disposed && !IsLoading && Items.Any(i => !i.IsProtected);
 
     [RelayCommand(CanExecute = nameof(CanKillSelected))]
-    private Task KillSelectedAsync(CancellationToken cancellationToken) =>
-        TerminateAsync(SelectedItem is null ? [] : [SelectedItem], cancellationToken);
+    private async Task KillSelectedAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedItem is null) return;
+        await TerminateAsync([SelectedItem], cancellationToken);
+    }
 
     [RelayCommand(CanExecute = nameof(CanKillAll))]
     private Task KillAllAsync(CancellationToken cancellationToken) =>
@@ -190,6 +196,9 @@ public abstract partial class LockQueryWindowModelBase : ObservableObject, IDisp
     private async Task TerminateAsync(IReadOnlyList<LockOwnerItem> targets, CancellationToken cancellationToken)
     {
         if (_disposed || IsLoading || targets.Count == 0) return;
+        if (ConfirmTerminateAsync is not null &&
+            !await ConfirmTerminateAsync(targets).ConfigureAwait(true))
+            return;
         var version = ++_requestVersion;
         using var request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, cancellationToken);
         _request = request;

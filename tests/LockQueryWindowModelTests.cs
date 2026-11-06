@@ -275,6 +275,24 @@ public sealed class LockQueryWindowModelTests
     }
 
     [Fact]
+    public async Task DecliningTerminateConfirmationDoesNotEndProcesses()
+    {
+        var terminated = false;
+        using var model = new ExplorerLockWindowModel(new FakeOperations
+        {
+            Terminate = (_, _) => { terminated = true; return Task.FromResult<IReadOnlyList<string>>(["done"]); }
+        });
+        model.ConfirmTerminateAsync = _ => Task.FromResult(false);
+        model.SetTargets(["file"]);
+        model.Items.Add(Owner(11));
+        model.SelectedItem = model.Items[0];
+        await model.KillSelectedCommand.ExecuteAsync(null);
+        Assert.False(terminated);
+        Assert.False(model.HasOperationFeedback);
+        Assert.False(model.IsLoading);
+    }
+
+    [Fact]
     public async Task EndingAllDeduplicatesPidAndSkipsProtectedProcesses()
     {
         IReadOnlyList<LockOwnerItem>? terminated = null;

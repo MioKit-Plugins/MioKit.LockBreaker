@@ -11,6 +11,9 @@
     <Interaction.Behaviors>
         <mio:PluginWindowBehavior Type="miokit.lock-finder" />
     </Interaction.Behaviors>
+    <shad:ShadWindow.Hosts>
+        <shad:ShadDialogHost />
+    </shad:ShadWindow.Hosts>
     <Grid Margin="12" RowDefinitions="Auto,*" RowSpacing="10">
         <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
             <TextBlock Text="{Binding TargetSummary}" VerticalAlignment="Center" FontWeight="SemiBold"
