@@ -44,6 +44,29 @@ jobs:
         shell: pwsh
         run: .\pack.ps1 -PackageVersion ${{ steps.version.outputs.version }} -PackageId MioKit.LockBreaker
 
+      - name: Push to nuget.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw "Missing organization/repository secret NUGET_API_KEY."
+          }
+          $nupkg = Get-ChildItem -Path artifacts -Filter *.nupkg -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $nupkg) {
+            throw "No nupkg found under artifacts/."
+          }
+          Write-Host "Pushing $($nupkg.Name) to nuget.org"
+          & dotnet nuget push $nupkg.FullName `
+            --api-key $env:NUGET_API_KEY `
+            --source https://api.nuget.org/v3/index.json `
+            --skip-duplicate
+          if ($LASTEXITCODE -ne 0) {
+            throw "NuGet push failed."
+          }
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
